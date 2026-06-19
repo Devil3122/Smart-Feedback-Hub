@@ -235,34 +235,6 @@ export default function UserAuth() {
                     mode === "register" ? "Register" : "Request Reset"
                   )}
                 </Button>
-
-                {mode === "login" && (
-                  <div className="mt-6">
-                    <div className="relative">
-                      <div className="absolute inset-0 flex items-center">
-                        <span className="w-full border-t border-slate-300 dark:border-slate-700" />
-                      </div>
-                      <div className="relative flex justify-center text-xs uppercase">
-                        <span className="bg-white dark:bg-slate-950 px-2 text-slate-500">
-                          Or continue with
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      className="w-full h-12 mt-4 flex items-center justify-center gap-2 border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900"
-                      onClick={() => window.location.href = "/api/users/oauth/vercel"}
-                      disabled={loading}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 76 65" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M37.5274 0L75.0548 65H0L37.5274 0Z" />
-                      </svg>
-                      Sign in with Vercel
-                    </Button>
-                  </div>
-                )}
               </form>
 
               <div className="mt-4 text-center space-y-2">

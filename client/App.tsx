@@ -15,6 +15,7 @@ import Dashboard from "./pages/Dashboard";
 import AdminLogin from "./pages/AdminLogin";
 import UserAuth from "./pages/UserAuth";
 import UserDashboard from "./pages/UserDashboard";
+import OAuthCallback from "./pages/OAuthCallback";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -30,6 +31,7 @@ const App = () => (
           <Route path="/" element={<Navigate to="/user-auth" replace />} />
           <Route path="/user-auth" element={<UserAuth />} />
           <Route path="/user-dashboard" element={<UserDashboard />} />
+          <Route path="/oauth/callback" element={<OAuthCallback />} />
           
           {/* Feedback Flow */}
           <Route path="/feedback/entry" element={<FeedbackEntry />} />

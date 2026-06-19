@@ -5,7 +5,7 @@ import cors from "cors";
 import { handleDemo } from "./routes/demo";
 import { submitFeedback, getDashboardStats, editFeedback, deleteFeedback, getUserFeedbacks, adminOverride } from "./routes/feedback";
 import { loginAdmin, createAdmin, listAdmins, authenticateToken, requireAdmin } from "./routes/auth";
-import { loginUser, registerUser, requestDeletion, getAllUsers, approveDeletion, rejectDeletion, sendOtp, verifyOtp, checkUsername, forgotPassword, approveReset, resetPassword } from "./routes/users";
+import { loginUser, registerUser, requestDeletion, getAllUsers, approveDeletion, rejectDeletion, sendOtp, verifyOtp, checkUsername, forgotPassword, approveReset, resetPassword, oauthVercelRedirect, oauthVercelCallback } from "./routes/users";
 import { getAuditLogs } from "./routes/audit";
 import { createForm, listForms, generateFormQr } from "./routes/forms";
 import { getCredentialsVault, verifyVault } from "./routes/superadmin";
@@ -97,6 +97,9 @@ export function createServer() {
   app.post("/api/users/reset-password", resetPassword);
   app.post("/api/users/request-deletion", requestDeletion);
   app.get("/api/users", authenticateToken, requireAdmin, getAllUsers);
+  app.get("/api/users/oauth/vercel", oauthVercelRedirect);
+  app.post("/api/users/oauth/callback", oauthVercelCallback);
+  app.get("/api/users/oauth/callback", oauthVercelCallback);
   app.post("/api/users/:id/approve-deletion", authenticateToken, requireAdmin, approveDeletion);
   app.post("/api/users/:id/reject-deletion", authenticateToken, requireAdmin, rejectDeletion);
   app.post("/api/users/:id/approve-reset", authenticateToken, requireAdmin, approveReset);

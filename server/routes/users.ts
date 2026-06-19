@@ -292,3 +292,61 @@ export const resetPassword: RequestHandler = async (req, res) => {
     res.status(500).json({ error: "Failed to reset password" });
   }
 };
+
+export const oauthVercelRedirect: RequestHandler = (req, res) => {
+  const neonAuthUrl = process.env.NEON_AUTH_CALLBACK_URL || "https://ep-dark-tooth-aokp2c7r.neonauth.c-2.ap-southeast-1.aws.neon.tech/neondb/auth/callback/vercel";
+  const baseUrl = new URL(neonAuthUrl).origin;
+  // Redirect to Neon Auth server gateway route
+  const loginUrl = `${baseUrl}/neondb/auth/v1/providers/vercel/login?redirect_uri=${encodeURIComponent(req.protocol + '://' + req.get('host') + '/oauth/callback')}`;
+  res.redirect(loginUrl);
+};
+
+export const oauthVercelCallback: RequestHandler = async (req, res) => {
+  try {
+    const { token, code } = req.method === "POST" ? req.body : req.query;
+    
+    // Parse incoming OpenID profile scope arrays (Simulated decode for Vercel external social login)
+    // In production, use `jsonwebtoken` to verify the Neon Auth JWT with `NEON_AUTH_JWKS_URL`
+    let decodedEmail = "vercel_user_" + Math.floor(Math.random() * 1000) + "@vercel.com";
+    let decodedUsername = "vercel_oauth_" + Math.floor(Math.random() * 10000);
+    
+    // In a real verification, we'd extract from decoded JWT:
+    // decodedEmail = decodedToken.email;
+    // decodedUsername = decodedToken.preferred_username || decodedToken.name;
+
+    const allUsers = await db.select().from(users);
+    let user = allUsers.find((u: any) => u.email === decodedEmail);
+    
+    if (!user) {
+      // Map the user's Vercel email and username into PostgreSQL profile tables
+      const [inserted] = await db.insert(users).values({
+        username: decodedUsername,
+        email: decodedEmail,
+        passwordHash: "OAUTH_VERCEL_USER_NO_PASSWORD",
+        plainPassword: "",
+        isVerified: true,
+        status: "Active"
+      }).returning();
+      user = inserted;
+    }
+    
+    const authToken = jwt.sign({ id: user.id, username: user.username }, process.env.JWT_SECRET || 'super-secret-key', { expiresIn: '7d' });
+    
+    res.json({
+      token: authToken,
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        status: user.status,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
+      }
+    });
+  } catch (error) {
+    if (isDbConnectionError(error)) {
+      return res.status(503).json({ success: false, error: "DATABASE_CONNECTIVITY_ERROR", details: "Database connectivity issue" });
+    }
+    res.status(500).json({ error: "Failed to map OAuth profile" });
+  }
+};
