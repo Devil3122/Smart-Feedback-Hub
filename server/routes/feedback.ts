@@ -93,7 +93,7 @@ export const submitFeedback: RequestHandler = async (req, res) => {
   } catch (error) {
     console.error("Error submitting feedback:", error);
     if (isDbConnectionError(error)) {
-      return res.status(503).json({ error: "DATABASE_CONNECTIVITY_ERROR", details: "Database connectivity issue" });
+      return res.status(503).json({ success: false, error: "DATABASE_CONNECTIVITY_ERROR", details: "Database connectivity issue" });
     }
     res.status(500).json({ error: "Failed to process feedback" });
   }
@@ -128,7 +128,7 @@ export const editFeedback: RequestHandler = async (req, res) => {
     res.json({ message: "Edit request submitted for admin approval", status: "Pending Approval", feedback: fb });
   } catch (error) {
     if (isDbConnectionError(error)) {
-      return res.status(503).json({ error: "DATABASE_CONNECTIVITY_ERROR", details: "Database connectivity issue" });
+      return res.status(503).json({ success: false, error: "DATABASE_CONNECTIVITY_ERROR", details: "Database connectivity issue" });
     }
     res.status(500).json({ error: "Failed to submit edit request" });
   }
@@ -269,7 +269,7 @@ export const adminOverride: RequestHandler = async (req, res) => {
     if (!originalFeedback) return res.status(404).json({ error: "Original feedback not found" });
 
     if (action === "Approve") {
-      originalFeedback.textContent = historyEntry.proposedText;
+      originalFeedback.textContent = historyEntry.proposedText || "";
       if (historyEntry.proposedRating !== undefined && historyEntry.proposedRating !== null) {
         originalFeedback.rating = historyEntry.proposedRating;
       }
@@ -326,7 +326,7 @@ export const adminOverride: RequestHandler = async (req, res) => {
       }).returning();
 
       // 2. Overwrite the primary record with the new submission
-      originalFeedback.textContent = historyEntry.proposedText;
+      originalFeedback.textContent = historyEntry.proposedText || "";
       if (historyEntry.proposedRating !== undefined && historyEntry.proposedRating !== null) {
         originalFeedback.rating = historyEntry.proposedRating;
       }

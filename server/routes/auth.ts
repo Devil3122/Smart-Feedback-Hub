@@ -84,7 +84,7 @@ export const loginAdmin: RequestHandler = async (req, res) => {
       } catch (dbError) {
         console.error(`[Admin Login Trace] DB query failed! Possible connection timeout:`, dbError);
         if (isDbConnectionError(dbError)) {
-          return res.status(503).json({ error: "DATABASE_CONNECTIVITY_ERROR", details: "Database connectivity issue" });
+          return res.status(503).json({ success: false, error: "DATABASE_CONNECTIVITY_ERROR", details: "Database connectivity issue" });
         }
         return res.status(503).json({ error: "Database connectivity issue" });
       }

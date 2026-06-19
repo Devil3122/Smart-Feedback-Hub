@@ -60,20 +60,29 @@ export function createServer() {
     try {
       await rawPool.query("SELECT 1 FROM admins LIMIT 1");
       res.json({
+        success: true,
         status: "connected",
         pipeline: "credential-validation",
         dbReachable: true,
         timestamp: new Date().toISOString(),
       });
     } catch (err: any) {
-      const structured = isDbConnectionError(err)
-        ? { error: "DATABASE_CONNECTIVITY_ERROR", details: err.message }
-        : { error: err?.message || "Unknown error" };
+      if (isDbConnectionError(err)) {
+        res.status(503).json({
+          success: false,
+          error: "DATABASE_CONNECTIVITY_ERROR",
+          details: err.message,
+          pipeline: "credential-validation",
+          dbReachable: false,
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
       res.status(503).json({
-        status: "error",
+        success: false,
+        error: err?.message || "Unknown error",
         pipeline: "credential-validation",
         dbReachable: false,
-        ...structured,
         timestamp: new Date().toISOString(),
       });
     }

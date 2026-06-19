@@ -546,7 +546,7 @@ export default function Dashboard() {
                   <div key={date} className="space-y-4">
                     <h3 className="text-lg font-semibold bg-slate-200 dark:bg-slate-800 p-2 rounded inline-block text-slate-850 dark:text-slate-150">{date}</h3>
                     <div className="grid grid-cols-1 gap-6">
-                      {groupedForms[date].map(f => {
+                      {groupedForms[date].map((f: any) => {
                   const formUrl = `${window.location.origin}/feedback/entry?form=${f.id}`;
                   const isExpanded = expandedFormId === f.id;
                   return (

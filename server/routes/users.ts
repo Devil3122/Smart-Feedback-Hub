@@ -20,7 +20,7 @@ export const checkUsername: RequestHandler = async (req, res) => {
     res.json({ available: allUsers.length === 0 });
   } catch (error) {
     if (isDbConnectionError(error)) {
-      return res.status(503).json({ error: "DATABASE_CONNECTIVITY_ERROR", details: "Database connectivity issue" });
+      return res.status(503).json({ success: false, error: "DATABASE_CONNECTIVITY_ERROR", details: "Database connectivity issue" });
     }
     res.status(500).json({ error: "Failed to check username" });
   }
@@ -63,7 +63,7 @@ export const registerUser: RequestHandler = async (req, res) => {
     });
   } catch (error) {
     if (isDbConnectionError(error)) {
-      return res.status(503).json({ error: "DATABASE_CONNECTIVITY_ERROR", details: "Database connectivity issue" });
+      return res.status(503).json({ success: false, error: "DATABASE_CONNECTIVITY_ERROR", details: "Database connectivity issue" });
     }
     res.status(500).json({ error: "Failed to register user" });
   }
@@ -106,7 +106,7 @@ export const loginUser: RequestHandler = async (req, res) => {
     });
   } catch (error) {
     if (isDbConnectionError(error)) {
-      return res.status(503).json({ error: "DATABASE_CONNECTIVITY_ERROR", details: "Database connectivity issue" });
+      return res.status(503).json({ success: false, error: "DATABASE_CONNECTIVITY_ERROR", details: "Database connectivity issue" });
     }
     res.status(500).json({ error: "Login failed" });
   }
