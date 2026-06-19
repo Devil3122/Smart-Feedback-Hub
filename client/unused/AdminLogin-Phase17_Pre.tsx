@@ -1,12 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import { ShieldCheck, Loader2, Eye, EyeOff, User, Wifi, WifiOff } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
-type ConnectionStatus = "checking" | "connected" | "error";
+import { ShieldCheck, Loader2, Eye, EyeOff } from "lucide-react";
+import { motion } from "framer-motion";
 
 export default function AdminLogin() {
   const navigate = useNavigate();
@@ -15,24 +13,6 @@ export default function AdminLogin() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [connStatus, setConnStatus] = useState<ConnectionStatus>("checking");
-
-  // Diagnostic: verify server ↔ credential-validation pipeline on mount
-  useEffect(() => {
-    const checkConnection = async () => {
-      try {
-        const res = await fetch("/api/auth/connection-check", { method: "GET" });
-        if (res.ok) {
-          setConnStatus("connected");
-        } else {
-          setConnStatus("error");
-        }
-      } catch {
-        setConnStatus("error");
-      }
-    };
-    checkConnection();
-  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,18 +43,7 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="relative min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4">
-      {/* Symmetric top-right nav button — mirrors "Admin Login" on UserAuth */}
-      <Button
-        id="go-to-user-login"
-        variant="outline"
-        className="absolute top-4 right-4 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300"
-        onClick={() => navigate("/")}
-      >
-        <User className="w-4 h-4 mr-2" />
-        User Login
-      </Button>
-
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4">
       <main className="w-full max-w-md">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -88,27 +57,6 @@ export default function AdminLogin() {
             <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50 mb-2">
               Admin Portal
             </h1>
-            {/* Connection diagnostic status badge */}
-            <div className="flex items-center justify-center gap-1.5 mt-1">
-              {connStatus === "checking" && (
-                <span className="inline-flex items-center gap-1.5 text-xs text-slate-400">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  Verifying auth server connection…
-                </span>
-              )}
-              {connStatus === "connected" && (
-                <span className="inline-flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
-                  <Wifi className="w-3 h-3" />
-                  Auth server connected
-                </span>
-              )}
-              {connStatus === "error" && (
-                <span className="inline-flex items-center gap-1.5 text-xs text-red-500">
-                  <WifiOff className="w-3 h-3" />
-                  Auth server unreachable
-                </span>
-              )}
-            </div>
           </div>
 
           <Card className="shadow-lg border-slate-200 dark:border-slate-800">
@@ -152,7 +100,7 @@ export default function AdminLogin() {
                 
                 {error && <p className="text-sm text-red-700 font-semibold">{error}</p>}
                 
-                <Button type="submit" id="admin-sign-in-btn" className="w-full h-12 mt-4" disabled={loading}>
+                <Button type="submit" className="w-full h-12 mt-4" disabled={loading}>
                   {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : "Sign In"}
                 </Button>
               </form>

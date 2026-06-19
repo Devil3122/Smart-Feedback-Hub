@@ -10,7 +10,7 @@ import { getAuditLogs } from "./routes/audit";
 import { createForm, listForms, generateFormQr } from "./routes/forms";
 import { getCredentialsVault, verifyVault } from "./routes/superadmin";
 import { createCampaign, listCampaigns } from "./routes/campaigns";
-import { ensureDbReady } from "./db";
+import { ensureDbReady, rawPool, isDbConnectionError } from "./db";
 
 export function createServer() {
   const app = express();
@@ -53,6 +53,31 @@ export function createServer() {
   app.post("/api/auth/login", loginAdmin);
   app.post("/api/auth/register", authenticateToken, requireAdmin, createAdmin);
   app.get("/api/auth/admins", authenticateToken, requireAdmin, listAdmins);
+
+  // Diagnostic: credential-validation pipeline connection check
+  // Uses the module-scope rawPool — validates Neon DB connection + admins schema.
+  app.get("/api/auth/connection-check", async (_req, res) => {
+    try {
+      await rawPool.query("SELECT 1 FROM admins LIMIT 1");
+      res.json({
+        status: "connected",
+        pipeline: "credential-validation",
+        dbReachable: true,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      const structured = isDbConnectionError(err)
+        ? { error: "DATABASE_CONNECTIVITY_ERROR", details: err.message }
+        : { error: err?.message || "Unknown error" };
+      res.status(503).json({
+        status: "error",
+        pipeline: "credential-validation",
+        dbReachable: false,
+        ...structured,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
   
   app.post("/api/users/login", loginUser);
   app.post("/api/users/register", registerUser);

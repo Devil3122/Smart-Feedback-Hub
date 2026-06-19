@@ -1,36 +1,82 @@
-import { Pool as PgPool } from "pg";
-import { createPool as createVercelPool } from "@vercel/postgres";
-import { drizzle as drizzleNode } from "drizzle-orm/node-postgres";
-import { drizzle as drizzleVercel } from "drizzle-orm/vercel-postgres";
+/**
+ * db.ts — Neon PostgreSQL connection layer
+ *
+ * Strategy (per Neon skill guidance):
+ *   • Vercel Fluid Compute / long-running local dev → pg Pool at module scope.
+ *   • DATABASE_URL must point to the Neon pooler endpoint (-pooler suffix).
+ *   • ssl.rejectUnauthorized: false ensures Vercel serverless TLS handshakes
+ *     succeed without raw-string crashes or connectivity timeouts.
+ *
+ * Previous dual-driver (@vercel/postgres + local pg) version is archived at:
+ *   server/unused/db-pre-neon.ts
+ */
+import { Pool } from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "../drizzle/schema";
 import { randomBytes, scryptSync } from "crypto";
 
-const isVercel = !!process.env.VERCEL;
-
+// ── Structured error classifier ───────────────────────────────────────────────
 export function isDbConnectionError(err: any): boolean {
   if (!err) return false;
-  if (err.code && typeof err.code === 'string' && err.code.startsWith('08')) {
+  // PostgreSQL connection-class error codes start with "08"
+  if (err.code && typeof err.code === "string" && err.code.startsWith("08")) {
     return true;
   }
-  const msg = err.message?.toLowerCase() || '';
-  if (msg.includes('timeout') || msg.includes('connection') || msg.includes('socket') || msg.includes('pool')) {
-    return true;
-  }
-  return false;
+  const msg = (err.message || "").toLowerCase();
+  return (
+    msg.includes("timeout") ||
+    msg.includes("connection") ||
+    msg.includes("socket") ||
+    msg.includes("pool") ||
+    msg.includes("econnrefused") ||
+    msg.includes("tls") ||
+    msg.includes("ssl")
+  );
 }
 
+// ── Password helpers ──────────────────────────────────────────────────────────
 export function hashPassword(password: string): string {
   const salt = randomBytes(16).toString("hex");
   const derivedKey = scryptSync(password, salt, 64).toString("hex");
   return `${salt}:${derivedKey}`;
 }
 
-let activePool: any = null;
-let activeDbInstance: any = null;
-let initializationPromise: Promise<void> | null = null;
+// ── Connection string resolution ──────────────────────────────────────────────
+function resolveConnectionString(): string {
+  if (process.env.DATABASE_URL) {
+    return process.env.DATABASE_URL;
+  }
+  // Fallback for local dev without .env
+  const user = process.env.PGUSER || "postgres";
+  const pass = process.env.PGPASSWORD || "";
+  const host = process.env.PGHOST || "localhost";
+  const port = process.env.PGPORT || "5432";
+  const db   = process.env.PGDATABASE || "smart-feedback-hub";
+  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:${port}/${encodeURIComponent(db)}`;
+}
 
-async function runAutoMigrations(pool: any) {
-  console.log("[DB] Running pre-flight table verification and auto-seeding...");
+// ── Module-scope Pool (created once, reused across Vercel function warm starts) ─
+const pool = new Pool({
+  connectionString: resolveConnectionString(),
+  // Required for Neon TLS over serverless/Vercel — avoids raw-text server crashes
+  ssl: { rejectUnauthorized: false },
+  max: 10,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 10_000,
+});
+
+pool.on("error", (err) => {
+  console.error("[DB] Idle pool client error:", err.message);
+});
+
+// ── Drizzle ORM instance ──────────────────────────────────────────────────────
+const dbInstance = drizzle(pool, { schema });
+
+// ── Auto-migration: create tables + seed super-admin if absent ────────────────
+let migrationPromise: Promise<void> | null = null;
+
+async function runAutoMigrations(): Promise<void> {
+  console.log("[DB] Running pre-flight table verification...");
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS notes (
@@ -113,89 +159,53 @@ async function runAutoMigrations(pool: any) {
       );
     `);
 
-    // Auto-seed Super Admin
-    const adminCheck = await pool.query(`SELECT id FROM admins WHERE username = $1`, ['Devil']);
+    // Seed Super Admin if not present
+    const adminCheck = await pool.query(
+      `SELECT id FROM admins WHERE username = $1`,
+      ["Devil"]
+    );
     if (adminCheck.rows.length === 0) {
-      console.log("[DB] Seeding Super Admin...");
+      console.log("[DB] Seeding Super Admin 'Devil'...");
       await pool.query(
         `INSERT INTO admins (username, password_hash, role) VALUES ($1, $2, $3)`,
-        ['Devil', hashPassword('Devil@2231'), 'superadmin']
+        ["Devil", hashPassword("Devil@2231"), "superadmin"]
       );
     }
     console.log("[DB] Pre-flight verification complete.");
   } catch (error) {
     console.error("[DB] Migration script failed:", error);
+    throw error;
   }
 }
 
-function getLocalConnectionString(): string {
-  let connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    const pgUser = process.env.PGUSER || "postgres";
-    const pgPassword = process.env.PGPASSWORD || "";
-    const pgHost = process.env.PGHOST || "localhost";
-    const pgPort = process.env.PGPORT || "5432";
-    const pgDb = process.env.PGDATABASE || "smart-feedback-hub";
-    connectionString = `postgresql://${encodeURIComponent(pgUser)}:${encodeURIComponent(pgPassword)}@${pgHost}:${pgPort}/${encodeURIComponent(pgDb)}`;
+// ── Public API ────────────────────────────────────────────────────────────────
+
+/** Ensure migrations have completed before the first query. */
+export async function ensureDbReady(): Promise<void> {
+  if (!migrationPromise) {
+    migrationPromise = runAutoMigrations();
   }
-  return connectionString;
+  await migrationPromise;
 }
 
-export function getDb() {
-  if (!activePool) {
-    if (isVercel) {
-      // ── Vercel production: use @vercel/postgres pooling ──
-      console.log("[DB] Initializing Vercel Postgres pool...");
-      activePool = createVercelPool();
-      activeDbInstance = drizzleVercel(activePool, { schema });
-    } else {
-      // ── Local development: use standard pg Pool ──
-      const connectionString = getLocalConnectionString();
-      console.log("[DB] Initializing local PostgreSQL pool...");
-      activePool = new PgPool({
-        connectionString,
-        max: 10,
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 10000,
-      });
-      activeDbInstance = drizzleNode(activePool, { schema });
-    }
-    initializationPromise = runAutoMigrations(activePool);
-  }
+/** Lazy-initialising Drizzle proxy — safe to import anywhere. */
+export const db = new Proxy({} as typeof dbInstance, {
+  get(_target, prop) {
+    const value = dbInstance[prop as keyof typeof dbInstance];
+    return typeof value === "function" ? (value as Function).bind(dbInstance) : value;
+  },
+});
 
-  return activeDbInstance;
-}
-// Ensure migrations complete before any query runs
-export async function ensureDbReady() {
-  getDb();
-  if (initializationPromise) {
-    await initializationPromise;
-    initializationPromise = null;
-  }
-}
-
-// Initialization is lazy — handled by the Proxy on first DB access
-
-export const db = new Proxy({}, {
-  get(target, prop) {
-    const instance = getDb();
-    if (!instance) throw new Error("Database instance not initialized");
-    const value = instance[prop as keyof typeof instance];
-    if (typeof value === "function") {
-      return value.bind(instance);
-    }
-    return value;
-  }
-}) as any;
-
+/** Run a callback inside a Drizzle transaction with safe fallback. */
 export async function withTransaction<T>(cb: (tx: any) => Promise<T>): Promise<T> {
-  const instance = getDb();
-  if (initializationPromise) await initializationPromise;
-  
-  if (instance && (instance as any).transaction) {
-    return await (instance as any).transaction(cb);
+  if (migrationPromise) await migrationPromise;
+  if ((dbInstance as any).transaction) {
+    return await (dbInstance as any).transaction(cb);
   }
-  return await cb(instance);
+  return await cb(dbInstance);
 }
+
+/** Expose the raw pg Pool for diagnostics (e.g. connection-check endpoint). */
+export { pool as rawPool };
 
 export { schema };
