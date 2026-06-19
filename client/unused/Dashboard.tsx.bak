@@ -1,0 +1,537 @@
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend
+} from "recharts";
+import { 
+  MessageSquare, ThumbsUp, Lightbulb, AlertTriangle, LayoutDashboard, 
+  Settings, LogOut, ShieldCheck, QrCode, Mic, Plus, Users, History, FileWarning, Play
+} from "lucide-react";
+import { DashboardStats, Campaign, Admin, User, FeedbackHistory } from "../../shared/api";
+import { format } from "date-fns";
+
+const COLORS = ['#22c55e', '#64748b', '#ef4444']; 
+
+export default function Dashboard() {
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState("Overview");
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [adminUser, setAdminUser] = useState<Admin | null>(null);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>("all");
+  
+  // Access control state
+  const [admins, setAdmins] = useState<Admin[]>([]);
+  const [newAdminUser, setNewAdminUser] = useState("");
+  const [newAdminPass, setNewAdminPass] = useState("");
+
+  // Campaign state
+  const [newCampaignName, setNewCampaignName] = useState("");
+
+  // Users & Audit State
+  const [users, setUsers] = useState<User[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+
+  useEffect(() => {
+    const token = localStorage.getItem("adminToken");
+    const userJson = localStorage.getItem("adminUser");
+    if (!token || !userJson) {
+      navigate("/admin/login");
+      return;
+    }
+    setAdminUser(JSON.parse(userJson));
+    fetchInitialData();
+  }, [navigate]);
+
+  useEffect(() => {
+    if (activeTab === "Overview") fetchStats(selectedCampaignId);
+  }, [selectedCampaignId, activeTab]);
+
+  const getToken = () => localStorage.getItem("adminToken");
+
+  const fetchInitialData = async () => {
+    await fetchCampaigns();
+    await fetchStats("all");
+    await fetchAdmins();
+    await fetchUsers();
+    await fetchAuditLogs();
+    setLoading(false);
+  };
+
+  const fetchStats = async (campId: string) => {
+    try {
+      const url = campId === "all" ? "/api/feedback/stats" : `/api/feedback/stats?campaignId=${campId}`;
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        setStats(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch stats", error);
+    }
+  };
+
+  const fetchCampaigns = async () => {
+    try {
+      const res = await fetch("/api/campaigns", {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+      if (res.ok) setCampaigns(await res.json());
+    } catch (error) { console.error("Failed to fetch campaigns", error); }
+  };
+
+  const fetchAdmins = async () => {
+    try {
+      const res = await fetch("/api/auth/admins", {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+      if (res.ok) setAdmins(await res.json());
+    } catch (error) { console.error("Failed to fetch admins", error); }
+  };
+
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch("/api/users", {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+      if (res.ok) setUsers(await res.json());
+    } catch (error) { console.error("Failed to fetch users", error); }
+  };
+
+  const fetchAuditLogs = async () => {
+    try {
+      const res = await fetch("/api/audit", {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+      if (res.ok) setAuditLogs(await res.json());
+    } catch (error) { console.error("Failed to fetch audit logs", error); }
+  };
+
+  const handleCreateCampaign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("/api/campaigns", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}` 
+        },
+        body: JSON.stringify({ campaignName: newCampaignName })
+      });
+      if (res.ok) {
+        setNewCampaignName("");
+        fetchCampaigns();
+      }
+    } catch (error) {
+      console.error("Error creating campaign", error);
+    }
+  };
+
+  const handleCreateAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}` 
+        },
+        body: JSON.stringify({ username: newAdminUser, password: newAdminPass })
+      });
+      if (res.ok) {
+        setNewAdminUser("");
+        setNewAdminPass("");
+        fetchAdmins();
+        alert("Admin created successfully!");
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to create admin");
+      }
+    } catch (error) {
+      console.error("Error creating admin", error);
+    }
+  };
+
+  const handleApproveDeletion = async (userId: number) => {
+    try {
+      const res = await fetch(`/api/users/${userId}/approve-deletion`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+      if (res.ok) {
+        fetchUsers();
+      }
+    } catch (e) { console.error("Error approving deletion", e); }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("adminToken");
+    localStorage.removeItem("adminUser");
+    navigate("/admin/login");
+  };
+
+  if (loading || !stats) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  const sentimentData = [
+    { name: 'Positive', value: stats.sentiment.positive },
+    { name: 'Neutral', value: stats.sentiment.neutral },
+    { name: 'Negative', value: stats.sentiment.negative },
+  ];
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col md:flex-row">
+      <aside className="w-full md:w-64 bg-slate-900 text-slate-300 flex flex-col">
+        <div className="p-6">
+          <div className="flex items-center gap-3 text-white font-bold text-xl mb-8">
+            <LayoutDashboard className="w-6 h-6 text-primary" />
+            Admin Dashboard
+          </div>
+          
+          <nav className="space-y-2">
+            <button onClick={() => setActiveTab("Overview")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === "Overview" ? "bg-primary/20 text-white" : "hover:bg-slate-800"}`}>
+              <LayoutDashboard className="w-5 h-5" /> Overview
+            </button>
+            <button onClick={() => setActiveTab("Campaigns")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === "Campaigns" ? "bg-primary/20 text-white" : "hover:bg-slate-800"}`}>
+              <QrCode className="w-5 h-5" /> QR Campaigns
+            </button>
+            {adminUser?.role === "superadmin" || adminUser?.role === "admin" ? (
+              <>
+                <button onClick={() => setActiveTab("User Management")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === "User Management" ? "bg-primary/20 text-white" : "hover:bg-slate-800"}`}>
+                  <Users className="w-5 h-5" /> User Management
+                </button>
+                <button onClick={() => setActiveTab("Access Control")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === "Access Control" ? "bg-primary/20 text-white" : "hover:bg-slate-800"}`}>
+                  <ShieldCheck className="w-5 h-5" /> Access Control
+                </button>
+                <button onClick={() => setActiveTab("Audit Trail")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === "Audit Trail" ? "bg-primary/20 text-white" : "hover:bg-slate-800"}`}>
+                  <History className="w-5 h-5" /> Audit Trail
+                </button>
+              </>
+            ) : null}
+          </nav>
+        </div>
+        
+        <div className="mt-auto p-6 space-y-4 border-t border-slate-800">
+          <div className="flex items-center gap-3 px-4 py-2 text-slate-400">
+            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center">
+              {adminUser?.username.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <p className="text-sm font-medium text-white">{adminUser?.username}</p>
+              <p className="text-xs">{adminUser?.role}</p>
+            </div>
+          </div>
+          <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-2 hover:bg-slate-800 rounded-lg transition-colors text-slate-400">
+            <LogOut className="w-5 h-5" /> Logout
+          </button>
+        </div>
+      </aside>
+
+      <main className="flex-1 p-8 overflow-y-auto">
+        {activeTab === "Overview" && (
+          <div className="space-y-8 animate-in fade-in duration-500">
+            <div className="flex justify-between items-center">
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Feedback Overview</h1>
+              <div className="w-64">
+                <Select value={selectedCampaignId} onValueChange={setSelectedCampaignId}>
+                  <SelectTrigger><SelectValue placeholder="Filter by Campaign" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Campaigns</SelectItem>
+                    {campaigns.map(c => <SelectItem key={c.id} value={c.id.toString()}>{c.campaignName}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <MetricCard title="Total Feedbacks" value={stats.totalFeedbacks} icon={<MessageSquare className="w-6 h-6 text-blue-500" />} />
+              <MetricCard title="Appreciation" value={stats.categories.appreciation} icon={<ThumbsUp className="w-6 h-6 text-green-500" />} />
+              <MetricCard title="Suggestions" value={stats.categories.suggestion} icon={<Lightbulb className="w-6 h-6 text-yellow-500" />} />
+              <MetricCard title="Complaints" value={stats.categories.complaint} icon={<AlertTriangle className="w-6 h-6 text-red-500" />} />
+            </div>
+
+            {stats.totalFeedbacks === 0 ? (
+              <div className="p-12 text-center bg-slate-50 dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-800 rounded-lg">
+                <FileWarning className="w-12 h-12 mx-auto text-slate-400 mb-4" />
+                <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100">No Data Available</h3>
+                <p className="text-slate-500">There are no feedbacks for the selected campaign yet.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                <Card className="lg:col-span-2 shadow-sm border-slate-200 dark:border-slate-800">
+                  <CardHeader><CardTitle>Feedback Trend (Last 7 Days)</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={stats.trend} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                          <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#64748b' }} />
+                          <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b' }} />
+                          <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                          <Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={3} dot={{ r: 4, fill: '#6366f1', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="shadow-sm border-slate-200 dark:border-slate-800">
+                  <CardHeader><CardTitle>Sentiment Analysis</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={sentimentData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                            {sentimentData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                          </Pie>
+                          <Tooltip />
+                          <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card className="shadow-sm border-slate-200 dark:border-slate-800">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle>Recent Feedbacks</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {stats.recentFeedbacks.length === 0 ? (
+                      <p className="text-slate-500 text-center py-4">No recent feedbacks.</p>
+                    ) : (
+                      stats.recentFeedbacks.slice(0, 5).map((fb, idx) => (
+                        <div key={idx} className="flex gap-4 p-4 border border-slate-200 dark:border-slate-800 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                          <div className={`p-2 rounded-full h-fit ${
+                            fb.sentiment === 'Positive' ? 'bg-green-100 text-green-600' :
+                            fb.sentiment === 'Negative' ? 'bg-red-100 text-red-600' :
+                            'bg-slate-100 text-slate-600'
+                          }`}>
+                            {fb.audioUrl ? <Mic className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />}
+                          </div>
+                          <div className="w-full">
+                            <p className="font-medium text-slate-900 dark:text-slate-100 line-clamp-1 mb-2">"{fb.textContent}"</p>
+                            {fb.audioUrl && (
+                              <audio src={fb.audioUrl} controls className="h-8 w-full max-w-[200px] mb-2" />
+                            )}
+                            <p className="text-sm text-slate-500">
+                              {format(new Date(fb.createdAt), 'dd MMM yyyy')} • {fb.category}
+                              {fb.updatedAt && fb.updatedAt !== fb.createdAt && ` (Edited)`}
+                            </p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "Campaigns" && (
+          <div className="space-y-8 animate-in fade-in duration-500">
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">QR Campaigns Generator</h1>
+            <Card className="shadow-sm border-slate-200 dark:border-slate-800">
+              <CardHeader><CardTitle>Create New Campaign</CardTitle></CardHeader>
+              <CardContent>
+                <form onSubmit={handleCreateCampaign} className="flex gap-4 items-end">
+                  <div className="flex-1 space-y-2">
+                    <label className="text-sm font-medium">Group/Event Name</label>
+                    <Input placeholder="e.g. Annual Summit 2026" value={newCampaignName} onChange={e => setNewCampaignName(e.target.value)} required />
+                  </div>
+                  <Button type="submit" className="h-10"><Plus className="w-4 h-4 mr-2" /> Generate QR Campaign</Button>
+                </form>
+              </CardContent>
+            </Card>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {campaigns.map(c => {
+                const campaignUrl = `${window.location.origin}/?campaign=${c.id}`;
+                return (
+                  <Card key={c.id} className="shadow-sm border-slate-200 dark:border-slate-800">
+                    <CardHeader>
+                      <CardTitle className="text-lg">{c.campaignName}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="flex flex-col items-center gap-4">
+                      <img src={c.qrCodeUrl} alt="QR Code" className="w-48 h-48 border border-slate-200 rounded-lg p-2 bg-white" />
+                      <div className="w-full text-center">
+                        <a href={campaignUrl} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline text-sm break-all">
+                          {campaignUrl}
+                        </a>
+                      </div>
+                      <Button variant="outline" className="w-full" onClick={() => {
+                        const link = document.createElement('a'); link.href = c.qrCodeUrl; link.download = `${c.campaignName}-qr.png`; link.click();
+                      }}>Download QR Code</Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "User Management" && (
+          <div className="space-y-8 animate-in fade-in duration-500">
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">User Management</h1>
+            <Card className="shadow-sm border-slate-200 dark:border-slate-800">
+              <CardHeader><CardTitle>End Users</CardTitle></CardHeader>
+              <CardContent>
+                <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 font-medium border-b border-slate-200 dark:border-slate-800">
+                      <tr>
+                        <th className="px-6 py-3">ID</th>
+                        <th className="px-6 py-3">Username</th>
+                        <th className="px-6 py-3">Status</th>
+                        <th className="px-6 py-3">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                      {users.map(u => (
+                        <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                          <td className="px-6 py-4">{u.id}</td>
+                          <td className="px-6 py-4">{u.username}</td>
+                          <td className="px-6 py-4">
+                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                              u.status === 'Deletion Pending' ? 'bg-yellow-100 text-yellow-800' :
+                              u.status === 'Deleted' ? 'bg-red-100 text-red-800' :
+                              'bg-green-100 text-green-800'
+                            }`}>{u.status}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            {u.status === 'Deletion Pending' && (
+                              <Button size="sm" variant="destructive" onClick={() => handleApproveDeletion(u.id)}>
+                                Approve Deletion
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {activeTab === "Audit Trail" && (
+          <div className="space-y-8 animate-in fade-in duration-500">
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Feedback Audit Trail</h1>
+            <div className="space-y-6">
+              {auditLogs.length === 0 ? (
+                <p className="text-slate-500">No modifications logged yet.</p>
+              ) : auditLogs.map(log => (
+                <Card key={log.id} className="shadow-sm border-slate-200 dark:border-slate-800">
+                  <CardHeader>
+                    <CardTitle className="text-sm text-slate-500">
+                      Feedback #{log.originalFeedbackId} modified on {format(new Date(log.modifiedAt), "MMM d, yyyy h:mm a")}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900 rounded-lg">
+                      <h4 className="font-semibold text-red-800 dark:text-red-400 mb-2">Original (Pre-modification)</h4>
+                      <p className="text-slate-700 dark:text-slate-300">{log.previousText}</p>
+                    </div>
+                    <div className="p-4 bg-green-50 dark:bg-green-950/20 border border-green-100 dark:border-green-900 rounded-lg">
+                      <h4 className="font-semibold text-green-800 dark:text-green-400 mb-2">
+                        {log.isDeleted ? "Current (Deleted)" : "Current (Active)"}
+                      </h4>
+                      <p className="text-slate-700 dark:text-slate-300">{log.isDeleted ? "[Deleted by user]" : log.currentText}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "Access Control" && (
+          <div className="space-y-8 animate-in fade-in duration-500">
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Admin Access Management</h1>
+            <Card className="shadow-sm border-slate-200 dark:border-slate-800">
+              <CardHeader><CardTitle>Create Sub-Admin</CardTitle></CardHeader>
+              <CardContent>
+                <form onSubmit={handleCreateAdmin} className="flex flex-col md:flex-row gap-4 items-end">
+                  <div className="flex-1 space-y-2">
+                    <label className="text-sm font-medium">Username</label>
+                    <Input value={newAdminUser} onChange={e => setNewAdminUser(e.target.value)} required />
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <label className="text-sm font-medium">Password</label>
+                    <Input type="password" value={newAdminPass} onChange={e => setNewAdminPass(e.target.value)} required />
+                  </div>
+                  <Button type="submit" className="h-10 mt-4 md:mt-0"><Plus className="w-4 h-4 mr-2" /> Create Admin</Button>
+                </form>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-sm border-slate-200 dark:border-slate-800">
+              <CardHeader><CardTitle>Current Admins</CardTitle></CardHeader>
+              <CardContent>
+                <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 font-medium border-b border-slate-200 dark:border-slate-800">
+                      <tr>
+                        <th className="px-6 py-3">ID</th>
+                        <th className="px-6 py-3">Username</th>
+                        <th className="px-6 py-3">Role</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                      {admins.map(a => (
+                        <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                          <td className="px-6 py-4">{a.id}</td>
+                          <td className="px-6 py-4 font-medium">{a.username}</td>
+                          <td className="px-6 py-4">
+                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                              a.role === 'superadmin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                            }`}>{a.role}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function MetricCard({ title, value, icon }: { title: string, value: number, icon: React.ReactNode }) {
+  return (
+    <Card className="shadow-sm border-slate-200 dark:border-slate-800">
+      <CardContent className="p-6">
+        <div className="flex justify-between items-start mb-2">
+          <div>
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{title}</p>
+            <h3 className="text-3xl font-bold text-slate-900 dark:text-slate-50 mt-1">{value}</h3>
+          </div>
+          <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded-lg">
+            {icon}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

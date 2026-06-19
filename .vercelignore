@@ -1,0 +1,9 @@
+# Ignore local dev databases and media
+.env
+.env.local
+*.mp3
+uploads/
+downloads/
+
+# Ignore the Antigravity archived code folder
+unused/
