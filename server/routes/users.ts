@@ -1,5 +1,6 @@
 import { RequestHandler } from "express";
 import jwt from "jsonwebtoken";
+import jwksClient from "jwks-rsa";
 import { db, hashPassword, withTransaction, isDbConnectionError } from "../db";
 import { users } from "../../drizzle/schema";
 import { scryptSync } from "crypto";
@@ -294,10 +295,9 @@ export const resetPassword: RequestHandler = async (req, res) => {
 };
 
 export const oauthVercelRedirect: RequestHandler = (req, res) => {
-  const neonAuthUrl = process.env.NEON_AUTH_CALLBACK_URL || "https://ep-dark-tooth-aokp2c7r.neonauth.c-2.ap-southeast-1.aws.neon.tech/neondb/auth/callback/vercel";
-  const baseUrl = new URL(neonAuthUrl).origin;
+  const neonAuthBaseUrl = process.env.NEON_AUTH_BASE_URL || "https://ep-dark-tooth-aokp2c7r.neonauth.c-2.ap-southeast-1.aws.neon.tech/neondb/auth";
   // Redirect to Neon Auth server gateway route
-  const loginUrl = `${baseUrl}/neondb/auth/v1/providers/vercel/login?redirect_uri=${encodeURIComponent(req.protocol + '://' + req.get('host') + '/oauth/callback')}`;
+  const loginUrl = `${neonAuthBaseUrl}/v1/providers/vercel/login?redirect_uri=${encodeURIComponent(req.protocol + '://' + req.get('host') + '/oauth/callback')}`;
   res.redirect(loginUrl);
 };
 
@@ -305,14 +305,32 @@ export const oauthVercelCallback: RequestHandler = async (req, res) => {
   try {
     const { token, code } = req.method === "POST" ? req.body : req.query;
     
-    // Parse incoming OpenID profile scope arrays (Simulated decode for Vercel external social login)
-    // In production, use `jsonwebtoken` to verify the Neon Auth JWT with `NEON_AUTH_JWKS_URL`
-    let decodedEmail = "vercel_user_" + Math.floor(Math.random() * 1000) + "@vercel.com";
-    let decodedUsername = "vercel_oauth_" + Math.floor(Math.random() * 10000);
-    
-    // In a real verification, we'd extract from decoded JWT:
-    // decodedEmail = decodedToken.email;
-    // decodedUsername = decodedToken.preferred_username || decodedToken.name;
+    if (!token) {
+      return res.status(400).json({ error: "Missing authentication token" });
+    }
+
+    // Verify token with Neon Auth JWKS
+    const client = jwksClient({
+      jwksUri: process.env.NEON_AUTH_JWKS_URL || "https://ep-dark-tooth-aokp2c7r.neonauth.c-2.ap-southeast-1.aws.neon.tech/neondb/auth/.well-known/jwks.json"
+    });
+
+    const getKey = (header: jwt.JwtHeader, callback: jwt.SigningKeyCallback) => {
+      client.getSigningKey(header.kid, (err, key) => {
+        if (err) return callback(err);
+        const signingKey = key?.getPublicKey();
+        callback(null, signingKey);
+      });
+    };
+
+    const decodedToken = await new Promise<any>((resolve, reject) => {
+      jwt.verify(token as string, getKey, {}, (err, decoded) => {
+        if (err) reject(err);
+        else resolve(decoded);
+      });
+    });
+
+    let decodedEmail = decodedToken.email;
+    let decodedUsername = decodedToken.preferred_username || decodedToken.name || decodedToken.nickname || "vercel_user_" + Math.floor(Math.random() * 10000);
 
     const allUsers = await db.select().from(users);
     let user = allUsers.find((u: any) => u.email === decodedEmail);
